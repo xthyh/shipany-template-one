@@ -1,0 +1,15 @@
+.markdown {
+  background-color: var(--background-secondary);
+  color: var(--foreground);
+  li {
+    list-style-type: square;
+    word-break: break-word;
+  }
+}
+
+.markdown pre,
+.markdown code,
+.markdown blockquote {
+  background-color: var(--background-secondary);
+  color: var(--foreground);
+}

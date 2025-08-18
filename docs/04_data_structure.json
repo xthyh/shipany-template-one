@@ -1,0 +1,411 @@
+{
+    "shared_structure_description": "多模态视频内容分析Agent的shared存储，用于在11个Node之间传递视频元数据、缓存信息、音视频提取结果、多模态理解数据、融合上下文、分析结果及最终输出。所有数据按时间戳对齐，支持并行处理与缓存复用。",
+    "shared_fields": [
+        {
+            "field_name": "video_path",
+            "data_type": "str",
+            "description": "用户输入的本地视频文件绝对路径",
+            "purpose": "作为整个流程的主键与缓存键的一部分",
+            "read_by_nodes": [
+                "VideoValidationNode",
+                "CacheCheckNode",
+                "FrameExtractionNode",
+                "AudioExtractionNode"
+            ],
+            "written_by_nodes": [],
+            "example_value": "/home/user/videos/sample.mp4",
+            "required": true
+        },
+        {
+            "field_name": "video_meta",
+            "data_type": "dict",
+            "description": "视频基础元数据",
+            "purpose": "供后续节点了解视频参数并决定处理策略",
+            "read_by_nodes": [
+                "CacheCheckNode",
+                "FrameExtractionNode",
+                "AudioExtractionNode",
+                "ResultFormattingNode"
+            ],
+            "written_by_nodes": [
+                "VideoValidationNode"
+            ],
+            "example_value": {
+                "duration": 600.0,
+                "width": 1920,
+                "height": 1080,
+                "fps": 30.0,
+                "codec": "h264",
+                "bitrate": "5000k",
+                "has_audio": true
+            },
+            "required": true
+        },
+        {
+            "field_name": "video_hash",
+            "data_type": "str",
+            "description": "视频文件内容哈希（SHA-256）",
+            "purpose": "作为缓存主键，快速判断视频是否已处理",
+            "read_by_nodes": [
+                "CacheCheckNode",
+                "CacheStoreNode"
+            ],
+            "written_by_nodes": [
+                "CacheCheckNode"
+            ],
+            "example_value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "required": true
+        },
+        {
+            "field_name": "cache_hit",
+            "data_type": "bool",
+            "description": "缓存是否命中",
+            "purpose": "控制流程走向：直接返回缓存结果或继续处理",
+            "read_by_nodes": [
+                "ResultFormattingNode"
+            ],
+            "written_by_nodes": [
+                "CacheCheckNode"
+            ],
+            "example_value": false,
+            "required": true
+        },
+        {
+            "field_name": "cached_result",
+            "data_type": "dict",
+            "description": "缓存中的完整处理结果",
+            "purpose": "缓存命中时直接复用，避免重复计算",
+            "read_by_nodes": [
+                "ResultFormattingNode"
+            ],
+            "written_by_nodes": [
+                "CacheCheckNode"
+            ],
+            "example_value": {
+                "summary": "...",
+                "qa_pairs": [],
+                "topics": [],
+                "raw_output": {}
+            },
+            "required": false
+        },
+        {
+            "field_name": "frame_list",
+            "data_type": "list[dict]",
+            "description": "提取的关键帧信息列表",
+            "purpose": "供VisualDescriptionNode批量生成图像描述",
+            "read_by_nodes": [
+                "VisualDescriptionNode"
+            ],
+            "written_by_nodes": [
+                "FrameExtractionNode"
+            ],
+            "example_value": [
+                {
+                    "frame_path": "/tmp/frames/00001.jpg",
+                    "timestamp": 0.0
+                },
+                {
+                    "frame_path": "/tmp/frames/00002.jpg",
+                    "timestamp": 1.0
+                }
+            ],
+            "required": false
+        },
+        {
+            "field_name": "audio_wav_path",
+            "data_type": "str",
+            "description": "提取的WAV音频文件路径",
+            "purpose": "供AudioTranscriptionNode进行语音识别",
+            "read_by_nodes": [
+                "AudioTranscriptionNode"
+            ],
+            "written_by_nodes": [
+                "AudioExtractionNode"
+            ],
+            "example_value": "/tmp/audio/sample.wav",
+            "required": false
+        },
+        {
+            "field_name": "transcription_segments",
+            "data_type": "list[dict]",
+            "description": "带时间戳的语音识别结果",
+            "purpose": "与视觉描述对齐，构建多模态上下文",
+            "read_by_nodes": [
+                "MultimodalFusionNode"
+            ],
+            "written_by_nodes": [
+                "AudioTranscriptionNode"
+            ],
+            "example_value": [
+                {
+                    "start": 0.0,
+                    "end": 4.3,
+                    "text": "Hello everyone",
+                    "confidence": 0.98
+                }
+            ],
+            "required": false
+        },
+        {
+            "field_name": "visual_descriptions",
+            "data_type": "list[dict]",
+            "description": "关键帧的图像描述列表",
+            "purpose": "与转录文本对齐，构建多模态上下文",
+            "read_by_nodes": [
+                "MultimodalFusionNode"
+            ],
+            "written_by_nodes": [
+                "VisualDescriptionNode"
+            ],
+            "example_value": [
+                {
+                    "timestamp": 0.0,
+                    "description": "A person standing in front of a whiteboard",
+                    "confidence": 0.92
+                }
+            ],
+            "required": false
+        },
+        {
+            "field_name": "multimodal_context",
+            "data_type": "dict",
+            "description": "融合后的多模态上下文对象",
+            "purpose": "为ContentAnalysisNode提供统一输入，包含对齐的文本与视觉信息",
+            "read_by_nodes": [
+                "ContentAnalysisNode"
+            ],
+            "written_by_nodes": [
+                "MultimodalFusionNode"
+            ],
+            "example_value": {
+                "segments": [
+                    {
+                        "timestamp": 0.0,
+                        "text": "Hello everyone",
+                        "visual": "A person standing",
+                        "combined": "At 0s: A person says 'Hello everyone' while standing"
+                    }
+                ]
+            },
+            "required": false
+        },
+        {
+            "field_name": "user_task",
+            "data_type": "dict",
+            "description": "用户指定的任务指令",
+            "purpose": "指导ContentAnalysisNode执行摘要、问答或主题分析",
+            "read_by_nodes": [
+                "ContentAnalysisNode"
+            ],
+            "written_by_nodes": [],
+            "example_value": {
+                "type": "summary",
+                "query": "What are the main topics?"
+            },
+            "required": true
+        },
+        {
+            "field_name": "analysis_result",
+            "data_type": "dict",
+            "description": "LLM生成的结构化分析结果",
+            "purpose": "供ResultFormattingNode格式化为最终输出",
+            "read_by_nodes": [
+                "ResultFormattingNode"
+            ],
+            "written_by_nodes": [
+                "ContentAnalysisNode"
+            ],
+            "example_value": {
+                "summary": "The video discusses...",
+                "qa_pairs": [
+                    {
+                        "q": "Who is speaking?",
+                        "a": "A woman in a blue shirt"
+                    }
+                ],
+                "topics": [
+                    "AI",
+                    "Education"
+                ]
+            },
+            "required": false
+        },
+        {
+            "field_name": "formatted_output",
+            "data_type": "dict",
+            "description": "最终格式化后的输出对象",
+            "purpose": "供OutputDeliveryNode保存到文件并生成查看器索引",
+            "read_by_nodes": [
+                "OutputDeliveryNode",
+                "CacheStoreNode"
+            ],
+            "written_by_nodes": [
+                "ResultFormattingNode"
+            ],
+            "example_value": {
+                "json_path": "/out/result.json",
+                "markdown_path": "/out/result.md",
+                "meta": {
+                    "processed_at": "2024-05-20T12:00:00Z"
+                }
+            },
+            "required": false
+        },
+        {
+            "field_name": "output_config",
+            "data_type": "dict",
+            "description": "输出配置参数",
+            "purpose": "控制输出目录、格式及查看器选项",
+            "read_by_nodes": [
+                "OutputDeliveryNode",
+                "ResultFormattingNode"
+            ],
+            "written_by_nodes": [],
+            "example_value": {
+                "out_dir": "/out",
+                "format": [
+                    "json",
+                    "markdown"
+                ],
+                "enable_viewer": true
+            },
+            "required": true
+        }
+    ],
+    "data_flow_patterns": [
+        {
+            "pattern_name": "cache_hit_shortcut",
+            "description": "当缓存命中时，跳过所有计算节点，直接从CacheCheckNode到ResultFormattingNode",
+            "involved_fields": [
+                "video_hash",
+                "cache_hit",
+                "cached_result"
+            ],
+            "flow_sequence": [
+                "CacheCheckNode→cached_result",
+                "ResultFormattingNode←cached_result"
+            ]
+        },
+        {
+            "pattern_name": "parallel_extraction",
+            "description": "FrameExtractionNode与AudioExtractionNode并行执行，互不阻塞",
+            "involved_fields": [
+                "frame_list",
+                "audio_wav_path"
+            ],
+            "flow_sequence": [
+                "FrameExtractionNode→frame_list",
+                "AudioExtractionNode→audio_wav_path"
+            ]
+        },
+        {
+            "pattern_name": "batch_processing",
+            "description": "VisualDescriptionNode与AudioTranscriptionNode并行批量处理，结果汇聚到MultimodalFusionNode",
+            "involved_fields": [
+                "frame_list",
+                "audio_wav_path",
+                "visual_descriptions",
+                "transcription_segments",
+                "multimodal_context"
+            ],
+            "flow_sequence": [
+                "VisualDescriptionNode→visual_descriptions",
+                "AudioTranscriptionNode→transcription_segments",
+                "MultimodalFusionNode←visual_descriptions",
+                "MultimodalFusionNode←transcription_segments",
+                "MultimodalFusionNode→multimodal_context"
+            ]
+        },
+        {
+            "pattern_name": "result_cache_write",
+            "description": "处理完成后异步写入缓存，不影响主流程返回结果",
+            "involved_fields": [
+                "video_hash",
+                "formatted_output"
+            ],
+            "flow_sequence": [
+                "ResultFormattingNode→formatted_output",
+                "CacheStoreNode←formatted_output"
+            ]
+        }
+    ],
+    "shared_example": {
+        "video_path": "/home/user/videos/lecture.mp4",
+        "video_meta": {
+            "duration": 3600,
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "codec": "h264",
+            "bitrate": "6000k",
+            "has_audio": true
+        },
+        "video_hash": "a1b2c3d4e5f6...",
+        "cache_hit": false,
+        "cached_result": null,
+        "frame_list": [
+            {
+                "frame_path": "/tmp/frames/00001.jpg",
+                "timestamp": 0.0
+            },
+            {
+                "frame_path": "/tmp/frames/00002.jpg",
+                "timestamp": 1.0
+            }
+        ],
+        "audio_wav_path": "/tmp/audio/lecture.wav",
+        "transcription_segments": [
+            {
+                "start": 0.0,
+                "end": 5.2,
+                "text": "Welcome to the course",
+                "confidence": 0.97
+            }
+        ],
+        "visual_descriptions": [
+            {
+                "timestamp": 0.0,
+                "description": "A professor at a podium",
+                "confidence": 0.94
+            }
+        ],
+        "multimodal_context": {
+            "segments": [
+                {
+                    "timestamp": 0.0,
+                    "text": "Welcome to the course",
+                    "visual": "A professor at a podium",
+                    "combined": "At 0s: A professor welcomes students to the course while standing at a podium"
+                }
+            ]
+        },
+        "user_task": {
+            "type": "summary",
+            "query": ""
+        },
+        "analysis_result": {
+            "summary": "The lecture introduces machine learning fundamentals...",
+            "qa_pairs": [],
+            "topics": [
+                "Machine Learning",
+                "Supervised Learning"
+            ]
+        },
+        "formatted_output": {
+            "json_path": "/out/lecture.json",
+            "markdown_path": "/out/lecture.md",
+            "meta": {
+                "processed_at": "2024-05-20T12:00:00Z"
+            }
+        },
+        "output_config": {
+            "out_dir": "/out",
+            "format": [
+                "json",
+                "markdown"
+            ],
+            "enable_viewer": true
+        }
+    }
+}
